@@ -1,20 +1,85 @@
-<div align="start">
-  <h1>Kernel Build Action for Lancelot & Merlin</h1>
-  <h3><i>Powered By GitHub Actions</i></h3>
-</div>
+# Redmi 9 Kernel Rebuild for APatch
 
-A workflow to automatically build an Android kernel
+我把 `Redmi 9 (lancelot)` 这台机子的内核重新编出来了。
 
-## KALLSYMS Verified Entry
+不是简单换 ROM，也不是拿现成镜像硬套，而是针对 `MT6768 / Android 11 / 4.14 非 GKI 内核`，把一整套可重复跑的 GitHub Actions 编译流水线整理出来，稳定产出：
 
-For Redmi 9 (`lancelot`), use the dedicated workflow `Build Kernel KALLSYMS Verified` when you need a separately labeled build with APatch-required KALLSYMS options enabled.
+- `Image.gz-dtb`
+- `AnyKernel3` 可刷机包
+- `build-metadata`
+- `kallsyms-verification`
+- `build.log`
 
-- Workflow file: `.github/workflows/build-kallsyms-verified.yml`
-- Config file: `config-kallsyms-verified.env`
-- Flashable recovery package artifact: `AnyKernel3-kallsyms-verified-...-KALLSYMS-VERIFIED-lancelot-<build time>`
-- Verification artifact: `kallsyms-verification-KALLSYMS-VERIFIED-lancelot-<build time>`
+这个仓库的核心目标很直接：
 
-Expected verification output for this target:
+**给 Redmi 9 重编一个能走通 APatch 需求的内核，并且把整个流程工程化、自动化、可验证。**
+
+---
+
+## 我做成了什么
+
+这不是“能跑起来就算了”的 demo 仓库，而是已经打通的 `kernel-only` 编译链路。
+
+- 重新编译 `lancelot` 对应的 `mt6768` 内核
+- 保留 `KernelSU` 兼容构建路线
+- 单独做了 `KALLSYMS Verified` 工作流，专门面向 APatch
+- 修掉了 `DISABLE_LTO` 和内核内部 make 变量冲突导致的 clang 构建崩溃
+- 跑通了 `no-LTO` 路线，证明这份内核可以稳定完成完整编译
+- 能输出带校验信息的 artifact，而不是只有一个“你自己猜能不能刷”的包
+
+如果你知道 MTK 老内核、非 GKI、APatch、KALLSYMS、KernelSU 这些东西堆在一起有多难搞，你就会知道这套流水线不是玩具。
+
+---
+
+## 为什么这个项目值得写
+
+`Redmi 9` 这类老 MTK 机型，最大的问题从来不是“能不能解锁”，而是：
+
+- 内核老
+- 非 GKI
+- 符号表不完整
+- APatch 对 `kallsyms` 有明确要求
+- 社区现成包质量参差不齐
+- 很多所谓“能用”的包根本没有把构建输入钉死
+
+所以我没有走“下载一个别人打包好的神秘镜像然后祈祷”的路线。
+
+我做的是：
+
+**把 Redmi 9 的内核重编流程自己掌握下来。**
+
+这意味着：
+
+- 我知道它从哪个 kernel commit 编出来
+- 我知道它用了哪个 KernelSU setup source
+- 我知道它用了哪个 AnyKernel3 commit
+- 我知道它的配置项到底有没有真的写进 `.config`
+- 我知道 artifact 里到底是什么，而不是只看一个文件名自我感动
+
+---
+
+## 当前验证状态
+
+### 1. 默认 `no-LTO` 内核编译已成功
+
+成功 run：
+
+- [27058699197](https://github.com/chaseu0/kernel_action_mt6768/actions/runs/27058699197)
+- [27059782233](https://github.com/chaseu0/kernel_action_mt6768/actions/runs/27059782233)
+
+这说明：
+
+- `kernel-only` 路线已经跑通
+- `WORKFLOW_DISABLE_LTO` 修复生效
+- 不再出现 `clang: error: no such file or directory: 'true'`
+
+### 2. APatch 目标配置已验证生效
+
+成功 run：
+
+- [27058656441](https://github.com/chaseu0/kernel_action_mt6768/actions/runs/27058656441)
+
+这条 `KALLSYMS Verified` 路线确认了以下配置真实进入最终配置：
 
 - `CONFIG_KALLSYMS=y`
 - `CONFIG_KALLSYMS_ALL=y`
@@ -22,148 +87,159 @@ Expected verification output for this target:
 - `CONFIG_DEBUG_KERNEL=y`
 - `# CONFIG_KALLSYMS_ABSOLUTE_PERCPU is not set`
 
-## Usage Guide
+这正是这台机器为 APatch 方向做内核准备时最关键的一步。
 
-> [!NOTE]
-> You will need a GitHub account.
+---
 
-<details>
-  <summary><i>Click to expand</i></summary>
+## 仓库里最重要的两条工作流
 
-> ### 1.
-> ![01](guide/images/01.png)
+### `Build Kernel`
 
-> ### 2.
-> ![02](guide/images/02.png)
+用途：
 
-> ### 3.
-> ![03](guide/images/03.png)
+- 跑默认 `kernel-only` 编译
+- 产出 `Image.gz-dtb` 和 `AnyKernel3`
+- 适合验证工具链、编译稳定性、no-LTO 路线
 
-> ### 4.
-> ![04](guide/images/04.png)
+配置文件：
 
-> ### 5.
-> ![05](guide/images/05.png)
+- [`config.env`](config.env)
 
-> ### 6.
-> ![06](guide/images/06.png)
+### `Build Kernel KALLSYMS Verified`
 
-> ### 7.
-> ![07](guide/images/07.png)
+用途：
 
-> ### 8.
-> ![08](guide/images/08.png)
+- 跑面向 APatch 的 `KALLSYMS` 验证编译
+- 产出单独标记的 `KALLSYMS-VERIFIED` artifact
+- 附带 `kallsyms-verification` 报告
 
-> ### 9.
-> ![09](guide/images/09.png)
+配置文件：
 
-> ### 10.
-> ![10](guide/images/10.png)
+- [`config-kallsyms-verified.env`](config-kallsyms-verified.env)
 
-> ### 11.
-> ![11](guide/images/11.png)
-> **Note:** Reload this page if the yellow circle does not appear.
+工作流文件：
 
-> ### 12.
-> ![12](guide/images/12.png)
+- [`.github/workflows/build-kallsyms-verified.yml`](.github/workflows/build-kallsyms-verified.yml)
 
-> ### 13.
-> ![13](guide/images/13.png)
+---
 
-> ### 14.
-> ![14](guide/images/14.png)
+## 怎么跑流水线
 
-</details>
+### 跑默认内核编译
 
-## Options Guide
+1. Fork 这个仓库
+2. 打开 GitHub `Actions`
+3. 选择 `Build Kernel`
+4. 选择设备 `lancelot`
+5. 运行 workflow
+6. 下载产物：
+   - `Image.gz-dtb-...`
+   - `AnyKernel3-...`
+   - `build-metadata-...`
+   - `build-log-...`
 
-> [!NOTE]
-> All options are located in [config.env](config.env)
+### 跑 APatch / KALLSYMS 验证编译
 
-| Base section options | Optional | Description | Example value |
-|---------------------|----------|-------------|----------------|
-| KERNEL_SOURCE | <div align="center">❌</div> | Link to kernel repository | `https://github.com/Jbub5/android_kernel_xiaomi_mt6768` |
-| KERNEL_SOURCE_BRANCH | <div align="center">❌</div> | Branch name of kernel repository | <div align="center">`kernel-tree`</div> |
-| KERNEL_ARCH | <div align="center">❌</div> | The Linux kernel architecture | <div align="center">`arm64`</div> |
-| KERNEL_IMAGE_NAME | <div align="center">❌</div> | Format of the kernel image for flashable AnyKernel3 zip | <div align="center">`Image.gz-dtb`</div> |
+1. 打开 GitHub `Actions`
+2. 选择 `Build Kernel KALLSYMS Verified`
+3. 直接运行
+4. 下载产物：
+   - `AnyKernel3-kallsyms-verified-...`
+   - `Image.gz-dtb-kallsyms-verified-...`
+   - `kallsyms-verification-...`
+   - `build-metadata-...`
 
-<br>
+如果你真正关心的是 APatch，不要只跑默认工作流，直接跑 `KALLSYMS Verified`。
 
-| KernelSU section options | Optional | Description | Example value |
-|--------------------------|----------|-------------|---------------|
-| ENABLE_KERNELSU | <div align="center">✅</div> | Enables accounting for the KernelSU options written below | <div align="center">`true`</div> |
-| KERNELSU_SETUP_SOURCE | <div align="center">❌</div> | Link to KernelSU setup script | `https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh` |
-| KERNELSU_TAG | <div align="center">✅</div> | Repository branch or tag of KernelSU | <div align="center">`v1.0.1`</div> |
-| ADD_KPROBES_CONFIG | <div align="center">✅</div> | Apply [patches](https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#integrate-with-kprobe) kernel source code to support KernelSU installation via kprobe | <div align="center">`false`</div> |
-| KSU_HOOKS_PATCH | <div align="center">✅</div> | Apply [patches](https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#manually-modify-the-kernel-source) kernel source code to support KernelSU | <div align="center">`false`</div> |
-| KSU_REVERT | <div align="center">✅</div> | Revert the [commit](https://github.com/tiann/KernelSU/commit/898e9d4f8ca9b2f46b0c6b36b80a872b5b88d899) that removed non-GKI kernel support | <div align="center">`true`</div> |
-<!-- | KSU_EXPECTED_SIZE | idk | idk | idk | -->
-<!-- | KSU_EXPECTED_HASH | idk | idk | idk | -->
-> [!IMPORTANT]
-> [KernelSU](https://kernelsu.org/guide/what-is-kernelsu.html) [no longer supports non-GKI kernels](https://github.com/tiann/KernelSU/issues/1705) after version [v1.0.0](https://github.com/tiann/KernelSU/releases/tag/v1.0.0). The last supported version is [v0.9.5](https://github.com/tiann/KernelSU/releases/tag/v0.9.5), please make sure to use the correct tag.
+---
 
-<br>
+## 产物分别有什么用
 
-| APatch section options | Optional | Description | Example value |
-|------------------------|----------|-------------|---------------|
-| ADD_APATCH_SUPPORT | <div align="center">✅</div> | Add [required configs](https://apatch.dev/install.html#install-requirements) for [APatch](https://apatch.dev/what-is-apatch.html) and accounting for options written below | <div align="center">`false`</div> |
-| FIX_APATCH_OPENELA | <div align="center">✅</div> | Apply fix for https://github.com/bmax121/APatch/issues/400 | <div align="center">`false`</div> |
+### `Image.gz-dtb`
 
-<br>
+这是编译出来的原始内核镜像。
 
-| Compiler section options | Optional | Description | Example value |
-|--------------------------|----------|-------------|---------------|
-| USE_CLANG | <div align="center">✅</div> | Enable Clang toolchain usage and accounting for options written below | <div align="center">`true`</div> |
-| CLANG_SOURCE | <div align="center">❌</div> | Link to clang archive or repository | `https://github.com/ZyCromerZ/Clang/releases/download/21.0.0git-20250415-release/Clang-21.0.0git-20250415.tar.gz` |
-| CLANG_BRANCH | <div align="center">✅</div> | Branch name of clang repository | <div align="center">`main`</div> |
-| USE_GCC | <div align="center">✅</div> | Enable GCC toolchain usage and accounting for options written below | <div align="center">`false`</div> |
-| USE_GCC_64 | <div align="center">✅</div> | Enable GCC 64-bit | <div align="center">`true`</div> |
-| GCC_64_SOURCE | <div align="center">❌</div> | Link to GCC 64-bit archive or repository | `https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/aarch64-linux-gnu/gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz` |
-| GCC_64_BRANCH | <div align="center">✅</div> | Branch name of GCC 64-bit repository | <div align="center">`main`</div> |
-| USE_GCC_32 | <div align="center">✅</div> | Enable GCC 32-bit | <div align="center">`true`</div> |
-| GCC_32_SOURCE | <div align="center">❌</div> | Link to GCC 32-bit archive or repository | `https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/arm-linux-gnueabihf/gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz` |
-| GCC_32_BRANCH | <div align="center">✅</div> | Branch name of GCC 32-bit repository | <div align="center">`main`</div> |
-> [!IMPORTANT]
-> You can use only Clang or GCC, but not both at the same time.
+适合：
 
-<br>
+- 自己做二次封装
+- 自己对比哈希
+- 自己研究不同构建结果
 
-| Anykernel3 section options | Optional | Description | Example value |
-|----------------------------|----------|-------------|---------------|
-| USE_ANYKERNEL3 | <div align="center">✅</div> | Enable creating flashable AnyKernel3 zip and accounting for options written below | <div align="center">`true`</div> |
-| ANYKERNEL3_SOURCE | <div align="center">❌</div> | Link to AnyKernel3 source | `https://github.com/Jbub5/AnyKernel3.git` |
-| ANYKERNEL3_BRANCH | <div align="center">✅</div> | Branch name of AnyKernel3 repository | <div align="center">`proton`</div> |
+### `AnyKernel3`
 
-<br>
+这是最适合刷入测试的 recovery 可刷机包。
 
-| Build section options | Optional | Description | Example value |
-|-----------------------|----------|-------------|---------------|
-| EXTRA_CMDS | <div align="center">✅</div> | Additional compiler options | `LLVM=1 LLVM_IAS=1 LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CONFIG_NO_ERROR_ON_MISMATCH=y TARGET_BUILD_VARIANT=user` |
-| WORKFLOW_DISABLE_LTO | <div align="center">✅</div> | Disables LTO by editing defconfig before build. Named with a workflow prefix to avoid colliding with the kernel's internal `DISABLE_LTO` make variable. | <div align="center">`false`</div> |
-| DISABLE_CC_WERROR | <div align="center">✅</div> | Disable CONFIG_CC_WERROR | <div align="center">`false`</div> |
-| ENABLE_PYTHON2 | <div align="center">✅</div> | Many old kernels require python2 to build them | <div align="center">`false`</div> |
-| ENABLE_CCACHE | <div align="center">✅</div> | Enable [ccache](https://ccache.dev) | <div align="center">`false`</div> |
-| REMOVE_UNUSED_PACKAGES| <div align="center">✅</div> | Remove unnecessary packages and free up more disk space for builder | <div align="center">`false`</div> |
-| NEED_DTBO | <div align="center">✅</div> | Upload DTBO | <div align="center">`false`</div> |
-| BUILD_BOOT_IMG | <div align="center">✅</div> | Repack boot.img by replacing the kernel in it with the compiled kernel | <div align="center">`false`</div> |
-| SOURCE_BOOT_IMAGE | <div align="center">✅</div> | Link to the original boot.img for repackage it | `https://raw.githubusercontent.com/xiaoleGun/KernelSU_action/main/boot/boot.img` |
+适合：
 
-<br>
+- 快速验证新内核能不能上机
+- 避免自己手工打包 boot image
 
-| Misc section options | Optional | Description | Example value |
-|----------------------|----------|-------------|---------------|
-| OLD_ANDROID_SUPPORT | <div align="center">✅</div> | Enable support for MIUI 12.5 and custom ROMs based on Android 11 through 12 | <div align="center">`false`</div> |
-| ADD_OVERLAYFS_CONFIG | <div align="center">✅</div> | Automatically put the configs needed for OverlayFS into your defconfig | <div align="center">`false`</div> |
-> [!IMPORTANT]
-> Enabling OLD_ANDROID_SUPPORT breaks support for Android 13+.
+### `build-metadata`
 
-<br>
+这里面有：
 
-| Proton specific section options | Optional | Description | Example value |
-|----------------------------------|----------|-------------|---------------|
-| FIX_WIFI_SPEED | <div align="center">✅</div> | Rollback to old connectivity drivers that have better Wi-Fi speed, but cause spontaneous reboots on some devices | <div align="center">`false`</div> |
+- `BUILD-INFO.txt`
+- `SHA256SUMS.txt`
+- raw `Image.gz-dtb`
 
-## Credits
+适合：
 
-- [xiaoleGun](https://github.com/xiaoleGun) for base
-- [dabao1955](https://github.com/dabao1955) for format of README.md
+- 对比不同 run 是否真的使用同一组输入
+- 做哈希校验
+- 复盘构建来源
+
+### `kallsyms-verification`
+
+这里面有：
+
+- `kernel.config`
+- `KALLSYMS-STATUS.txt`
+- `SHA256SUMS.txt`
+
+适合：
+
+- 检查 `CONFIG_KALLSYMS_ALL` 是否真的打开
+- 确认这次构建到底是不是 APatch 目标内核
+
+---
+
+## 这仓库和普通“内核模板仓库”的区别
+
+很多仓库只是“能编一下”。
+
+这仓库的重点是：
+
+- 钉住关键输入
+- 明确区分普通构建和 `KALLSYMS` 验证构建
+- 输出构建日志和元数据
+- 给 `Redmi 9 / lancelot` 这种老 MTK 机型做实战化内核工程
+
+说得直白一点：
+
+**这不是把脚本拼起来，这是把一台老 MTK 机器的内核编译链条真正吃透之后，整理成可以持续复用的流水线。**
+
+---
+
+## 适合谁
+
+如果你是下面这几类人，这仓库就是为你准备的：
+
+- 手里有 `Redmi 9 / lancelot`
+- 想给这台机子上 APatch
+- 不想盲刷来路不明的内核包
+- 想自己掌控编译输入和输出
+- 想把老 MTK 机型的内核构建做成工程，而不是一次性手工活
+
+---
+
+## 致谢
+
+- [xiaoleGun](https://github.com/xiaoleGun) for base workflow ideas
+- [Jbub5](https://github.com/Jbub5) for the mt6768-oriented kernel action foundation
+- 所有还愿意折腾老 MTK 设备的人
+
+---
+
+## 一句话总结
+
+**我不是在“改一个包”，我是把 Redmi 9 的内核重编、验证、打包、面向 APatch 的配置确认，整套链路都自己打通了。**
