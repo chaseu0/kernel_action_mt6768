@@ -262,7 +262,9 @@ jobs:
                     }
                 fi
         fi
-        if [ ${{ env.DISABLE_LTO }} = true ]; then
+        # Do not export an env var named DISABLE_LTO: this kernel tree uses that
+        # make variable internally for per-file -fno-lto flags.
+        if [ ${{ env.WORKFLOW_DISABLE_LTO }} = true ]; then
             sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
