@@ -1,5 +1,21 @@
 name: Build Kernel
 on:
+  workflow_call:
+    inputs:
+      select_device:
+        description: 'Select device'
+        required: true
+        type: string
+      config_file:
+        description: 'Environment config file path'
+        required: false
+        default: 'config.env'
+        type: string
+      artifact_label:
+        description: 'Extra artifact name label'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       select_device:
@@ -15,7 +31,9 @@ jobs:
     name: Build Kernel by ${{ github.actor }}
     runs-on: ubuntu-24.04
     env:
-      DEVICE: ${{ github.event.inputs.select_device }}
+      DEVICE: ${{ inputs.select_device || github.event.inputs.select_device }}
+      CONFIG_FILE: ${{ inputs.config_file || 'config.env' }}
+      ARTIFACT_LABEL: ${{ inputs.artifact_label || '' }}
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
@@ -35,7 +53,7 @@ jobs:
 
     - name: Prepare environment
       run: |
-        grep -v -E "^#|^\n" config.env | sed 's/ #.*//; s/#.*//' >> $GITHUB_ENV
+        grep -v -E "^#|^\n" "$CONFIG_FILE" | sed 's/ #.*//; s/#.*//' >> $GITHUB_ENV
 
     - name: Set swap to 10G
       uses: pierotofy/set-swap-space@master
@@ -273,7 +291,7 @@ jobs:
       if: env.ENABLE_CCACHE == 'true'
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: build-kernel-${{ env.DEVICE }}${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}
+        key: build-kernel-${{ env.DEVICE }}${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}${{ env.ARTIFACT_LABEL }}
         max-size: 2G
 
     - name: Build kernel
@@ -415,40 +433,67 @@ jobs:
             echo "KBUILD_BUILD_HOST=${KBUILD_BUILD_HOST:-}"
             echo "KBUILD_BUILD_VERSION=${KBUILD_BUILD_VERSION:-}"
             echo "DEVICE=${DEVICE}"
+            echo "CONFIG_FILE=${CONFIG_FILE}"
+            echo "ARTIFACT_LABEL=${ARTIFACT_LABEL:-}"
         ) > "$META_DIR/BUILD-INFO.txt"
         (cd "$META_DIR" && sha256sum * > SHA256SUMS.txt)
+
+    - name: Generate KALLSYMS verification report
+      if: env.CHECK_FILE_IS_OK == 'true'
+      run: |
+        set -euo pipefail
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        REPORT_DIR=kallsyms-verification
+        mkdir -p "$REPORT_DIR"
+        cp android-kernel/out/.config "$REPORT_DIR/kernel.config"
+        {
+            echo "CONFIG_FILE=${CONFIG_FILE}"
+            echo "ARTIFACT_LABEL=${ARTIFACT_LABEL:-}"
+            echo "DEVICE=${DEVICE}"
+            echo
+            grep -E '^(CONFIG_DEBUG_KERNEL|CONFIG_KALLSYMS|CONFIG_KALLSYMS_ALL|CONFIG_KALLSYMS_ABSOLUTE_PERCPU|CONFIG_KALLSYMS_BASE_RELATIVE)=' android-kernel/out/.config || true
+            grep -E '^# CONFIG_(DEBUG_KERNEL|KALLSYMS|KALLSYMS_ALL|KALLSYMS_ABSOLUTE_PERCPU|KALLSYMS_BASE_RELATIVE) is not set$' android-kernel/out/.config || true
+        } > "$REPORT_DIR/KALLSYMS-STATUS.txt"
+        (cd "$REPORT_DIR" && sha256sum * > SHA256SUMS.txt)
 
     - name: Upload AnyKernel3
       if: env.CHECK_FILE_IS_OK == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: AnyKernel3${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        name: AnyKernel3${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}${{ env.ARTIFACT_LABEL }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/AnyKernel3/*
 
     - name: Upload kernel image
       if: env.CHECK_FILE_IS_OK == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.KERNEL_IMAGE_NAME }}${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        name: ${{ env.KERNEL_IMAGE_NAME }}${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}${{ env.ARTIFACT_LABEL }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/android-kernel/out/arch/${{ env.KERNEL_ARCH }}/boot/${{ env.KERNEL_IMAGE_NAME }}
 
     - name: Upload DTBO image
       if: env.CHECK_DTBO_IS_OK == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: dtbo-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        name: dtbo${{ env.ARTIFACT_LABEL }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/android-kernel/out/arch/${{ env.KERNEL_ARCH }}/boot/dtbo.img
 
     - name: Upload boot image
       if: env.MAKE_BOOT_IMAGE_IS_OK == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}${{ env.ARTIFACT_LABEL }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/boot.img
 
     - name: Upload build metadata
       if: env.CHECK_FILE_IS_OK == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: build-metadata-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        name: build-metadata${{ env.ARTIFACT_LABEL }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/build-metadata/*
+
+    - name: Upload KALLSYMS verification
+      if: env.CHECK_FILE_IS_OK == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: kallsyms-verification${{ env.ARTIFACT_LABEL }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        path: kernel_workspace/kallsyms-verification/*

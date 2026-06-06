@@ -1,0 +1,14 @@
+name: Build Kernel KALLSYMS Verified
+on:
+  push:
+    branches:
+    - 'kallsyms-verified/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-kernel.yml
+    with:
+      select_device: lancelot
+      config_file: config-kallsyms-verified.env
+      artifact_label: -KALLSYMS-VERIFIED
