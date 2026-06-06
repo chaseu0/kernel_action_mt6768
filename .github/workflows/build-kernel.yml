@@ -44,7 +44,11 @@ jobs:
 
     - name: Setup kernel build environment
       run: |
-        echo "BUILD_TIME=$(TZ=UTC date "+%Y%m%d%H%M")" >> $GITHUB_ENV
+        if [ -n "${BUILD_TIME_OVERRIDE:-}" ]; then
+            echo "BUILD_TIME=$BUILD_TIME_OVERRIDE" >> $GITHUB_ENV
+        else
+            echo "BUILD_TIME=$(TZ=UTC date "+%Y%m%d%H%M")" >> $GITHUB_ENV
+        fi
         sudo apt-get update
         sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libwxgtk3.2-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
         mkdir -p $GITHUB_WORKSPACE/kernel_workspace
@@ -167,6 +171,12 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
         git clone --recursive ${{ env.KERNEL_SOURCE }} -b ${{ env.KERNEL_SOURCE_BRANCH }} android-kernel --depth=1
+        if [ -n "${KERNEL_SOURCE_COMMIT:-}" ]; then
+            cd android-kernel
+            git fetch --depth=1 origin "$KERNEL_SOURCE_COMMIT"
+            git checkout --detach "$KERNEL_SOURCE_COMMIT"
+            git submodule update --init --recursive
+        fi
 
     - name: Download source boot image
       if: env.BUILD_BOOT_IMG == 'true'
@@ -282,8 +292,11 @@ jobs:
             echo "Toolchain not selected"
             exit 1
         fi
-        export KBUILD_BUILD_HOST=Github-Action
-        export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
+        export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-Github-Action}"
+        export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-$(echo ${{ github.actor }} | tr A-Z a-z)}"
+        export KBUILD_BUILD_TIMESTAMP="${KBUILD_BUILD_TIMESTAMP:-$(TZ=UTC date)}"
+        export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-}"
+        export KBUILD_BUILD_VERSION="${KBUILD_BUILD_VERSION:-1}"
         if [ -n ${{ env.KSU_EXPECTED_SIZE }} ] && [ -n ${{ env.KSU_EXPECTED_HASH }} ]; then
           export KSU_EXPECTED_SIZE=${{ env.KSU_EXPECTED_SIZE }}
           export KSU_EXPECTED_HASH=${{ env.KSU_EXPECTED_HASH }}
@@ -348,6 +361,12 @@ jobs:
             unzip AnyKernel3.zip -d AnyKernel3/
             rm AnyKernel3.zip
         fi
+        if [ -n "${ANYKERNEL3_COMMIT:-}" ]; then
+            cd AnyKernel3
+            git fetch --depth=1 origin "$ANYKERNEL3_COMMIT"
+            git checkout --detach "$ANYKERNEL3_COMMIT"
+            cd ..
+        fi
         cp android-kernel/out/arch/${{ env.KERNEL_ARCH }}/boot/${{ env.KERNEL_IMAGE_NAME }} AnyKernel3/
         if [ ${{ env.CHECK_DTBO_IS_OK }} = true ]; then
             cp android-kernel/out/arch/${{ env.KERNEL_ARCH }}/boot/dtbo.img AnyKernel3/
@@ -367,6 +386,37 @@ jobs:
             echo "Boot image is empty"
             exit 1
         fi
+
+    - name: Generate build metadata and checksums
+      if: env.CHECK_FILE_IS_OK == 'true'
+      run: |
+        set -euo pipefail
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        META_DIR=build-metadata
+        mkdir -p "$META_DIR"
+        cp android-kernel/out/arch/${{ env.KERNEL_ARCH }}/boot/${{ env.KERNEL_IMAGE_NAME }} "$META_DIR"/
+        if [ -f boot.img ]; then
+            cp boot.img "$META_DIR"/
+        fi
+        if [ -f android-kernel/out/arch/${{ env.KERNEL_ARCH }}/boot/dtbo.img ]; then
+            cp android-kernel/out/arch/${{ env.KERNEL_ARCH }}/boot/dtbo.img "$META_DIR"/
+        fi
+        (
+            cd android-kernel
+            echo "WORKFLOW_REPO_COMMIT=${GITHUB_SHA}"
+            echo "KERNEL_SOURCE_COMMIT=$(git rev-parse HEAD)"
+            echo "KERNELSU_SETUP_SOURCE=${KERNELSU_SETUP_SOURCE}"
+            echo "ANYKERNEL3_SOURCE=${ANYKERNEL3_SOURCE}"
+            echo "ANYKERNEL3_COMMIT=${ANYKERNEL3_COMMIT:-}"
+            echo "BUILD_TIME=${BUILD_TIME}"
+            echo "KBUILD_BUILD_TIMESTAMP=${KBUILD_BUILD_TIMESTAMP:-}"
+            echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-}"
+            echo "KBUILD_BUILD_USER=${KBUILD_BUILD_USER:-}"
+            echo "KBUILD_BUILD_HOST=${KBUILD_BUILD_HOST:-}"
+            echo "KBUILD_BUILD_VERSION=${KBUILD_BUILD_VERSION:-}"
+            echo "DEVICE=${DEVICE}"
+        ) > "$META_DIR/BUILD-INFO.txt"
+        (cd "$META_DIR" && sha256sum * > SHA256SUMS.txt)
 
     - name: Upload AnyKernel3
       if: env.CHECK_FILE_IS_OK == 'true'
@@ -395,3 +445,10 @@ jobs:
       with:
         name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/boot.img
+
+    - name: Upload build metadata
+      if: env.CHECK_FILE_IS_OK == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-metadata-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        path: kernel_workspace/build-metadata/*
