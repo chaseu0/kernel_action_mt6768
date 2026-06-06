@@ -5,6 +5,23 @@
 
 A workflow to automatically build an Android kernel
 
+## KALLSYMS Verified Entry
+
+For Redmi 9 (`lancelot`), use the dedicated workflow `Build Kernel KALLSYMS Verified` when you need a separately labeled build with APatch-required KALLSYMS options enabled.
+
+- Workflow file: `.github/workflows/build-kallsyms-verified.yml`
+- Config file: `config-kallsyms-verified.env`
+- Flashable recovery package artifact: `AnyKernel3-kallsyms-verified-...-KALLSYMS-VERIFIED-lancelot-<build time>`
+- Verification artifact: `kallsyms-verification-KALLSYMS-VERIFIED-lancelot-<build time>`
+
+Expected verification output for this target:
+
+- `CONFIG_KALLSYMS=y`
+- `CONFIG_KALLSYMS_ALL=y`
+- `CONFIG_KALLSYMS_BASE_RELATIVE=y`
+- `CONFIG_DEBUG_KERNEL=y`
+- `# CONFIG_KALLSYMS_ABSOLUTE_PERCPU is not set`
+
 ## Usage Guide
 
 > [!NOTE]
