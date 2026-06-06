@@ -122,7 +122,7 @@ A workflow to automatically build an Android kernel
 | Build section options | Optional | Description | Example value |
 |-----------------------|----------|-------------|---------------|
 | EXTRA_CMDS | <div align="center">✅</div> | Additional compiler options | `LLVM=1 LLVM_IAS=1 LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CONFIG_NO_ERROR_ON_MISMATCH=y TARGET_BUILD_VARIANT=user` |
-| DISABLE_LTO | <div align="center">✅</div> | [LTO](https://llvm.org/docs/LinkTimeOptimization.html) is used to optimize the kernel but sometimes causes errors | <div align="center">`false`</div> |
+| WORKFLOW_DISABLE_LTO | <div align="center">✅</div> | Disables LTO by editing defconfig before build. Named with a workflow prefix to avoid colliding with the kernel's internal `DISABLE_LTO` make variable. | <div align="center">`false`</div> |
 | DISABLE_CC_WERROR | <div align="center">✅</div> | Disable CONFIG_CC_WERROR | <div align="center">`false`</div> |
 | ENABLE_PYTHON2 | <div align="center">✅</div> | Many old kernels require python2 to build them | <div align="center">`false`</div> |
 | ENABLE_CCACHE | <div align="center">✅</div> | Enable [ccache](https://ccache.dev) | <div align="center">`false`</div> |
